@@ -39,10 +39,19 @@ export function getSessionCookieOptions(
   //       ? hostname
   //       : undefined;
 
+  const hostname = req.hostname;
+  const isLocalhost = LOCAL_HOSTS.has(hostname) || isIpAddress(hostname);
+  const domainParts = hostname.split(".");
+  const isProductionDomain = domainParts.length >= 2 && !isLocalhost;
+  const rootDomain = isProductionDomain
+    ? `.${domainParts.slice(-2).join(".")}`
+    : undefined;
+
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
+    sameSite: "none" as const,
     secure: isSecureRequest(req),
+    ...(rootDomain && { domain: rootDomain }),
   };
 }
