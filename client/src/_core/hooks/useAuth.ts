@@ -43,6 +43,7 @@ export function useAuth(options?: UseAuthOptions) {
 
   const state = useMemo(() => {
     localStorage.setItem(
+      "maham_user",
       JSON.stringify(meQuery.data)
     );
     return {
