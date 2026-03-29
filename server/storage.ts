@@ -1,4 +1,4 @@
-// Preconfigured storage helpers for Manus WebDev templates
+// Storage helpers for Maham Expo platform
 // Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
 
 import { ENV } from './_core/env';
