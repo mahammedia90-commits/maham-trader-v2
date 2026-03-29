@@ -349,8 +349,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Legacy-compatible methods
   const login = useCallback((_phone: string, _userData: Partial<User>) => {
-    // With Manus OAuth, login is handled by redirect
-    window.location.href = getLoginUrl();
+    // Redirect to local login page
+    window.location.href = "/login";
   }, []);
 
   const logout = useCallback(async () => {

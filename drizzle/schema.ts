@@ -451,3 +451,16 @@ export const promoCodes = mysqlTable("promo_codes", {
 
 export type PromoCode = typeof promoCodes.$inferSelect;
 export type InsertPromoCode = typeof promoCodes.$inferInsert;
+
+// ============================================================
+// OTP Codes (shared table with investor portal)
+// ============================================================
+export const otpCodes = mysqlTable("otp_codes", {
+  id: int("id").autoincrement().primaryKey(),
+  phone: varchar("phone", { length: 20 }).notNull(),
+  code: varchar("code", { length: 10 }).notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  verified: int("verified").default(0),
+  attempts: int("attempts").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});

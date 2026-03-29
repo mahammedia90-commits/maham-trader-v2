@@ -9,6 +9,7 @@ import { useLocation } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { LOGIN_BG } from '@/lib/mock-data';
@@ -164,7 +165,7 @@ export default function Login() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [countryCode, setCountryCode] = useState('+966');
   const [countryOpen, setCountryOpen] = useState(false);
-  const [otp, setOtp] = useState(['', '', '', '']);
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [otpTimer, setOtpTimer] = useState(60);
   const [loading, setLoading] = useState(false);
 
@@ -173,6 +174,14 @@ export default function Login() {
   const [companyName, setCompanyName] = useState('');
   const [activityType, setActivityType] = useState('');
   const [region, setRegion] = useState('');
+
+  const [devOtp, setDevOtp] = useState('');
+
+  // tRPC mutations for real OTP
+  const sendOtpMutation = trpc.merchantAuth.sendOtp.useMutation();
+  const verifyOtpMutation = trpc.merchantAuth.verifyOtp.useMutation();
+  const registerMutation = trpc.merchantAuth.register.useMutation();
+  const loginMutation = trpc.merchantAuth.login.useMutation();
 
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const countryRef = useRef<HTMLDivElement>(null);
@@ -198,52 +207,80 @@ export default function Login() {
     return () => { document.removeEventListener('mousedown', h); document.removeEventListener('touchstart', h); };
   }, []);
 
-  const handleSendOTP = useCallback(() => {
+  const handleSendOTP = useCallback(async () => {
     if (phoneNumber.length < 5) {
       toast.error(t('profile.please_enter_a_valid'));
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false); setStep(1); setOtpTimer(60);
+    try {
+      const fullPhone = `${countryCode.replace('+', '')}${phoneNumber}`;
+      const result = await sendOtpMutation.mutateAsync({ phone: fullPhone });
+      if (result.fallbackCode) setDevOtp(result.fallbackCode);
+      setStep(1); setOtpTimer(60);
       toast.success(t('otpSent'));
       setTimeout(() => otpRefs.current[0]?.focus(), 300);
-    }, 1000);
-  }, [phoneNumber, language, t]);
+    } catch {
+      toast.error('فشل إرسال رمز التحقق');
+    }
+    setLoading(false);
+  }, [phoneNumber, countryCode, sendOtpMutation, t]);
 
-  const handleOTPChange = useCallback((index: number, value: string) => {
+  const handleOTPChange = useCallback(async (index: number, value: string) => {
     if (value.length > 1) value = value[value.length - 1];
     if (!/^\d*$/.test(value)) return;
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
-    if (value && index < 3) otpRefs.current[index + 1]?.focus();
-    if (value && index === 3 && newOtp.every(d => d)) {
+    if (value && index < 5) otpRefs.current[index + 1]?.focus();
+    if (value && index === 5 && newOtp.every(d => d)) {
       setLoading(true);
-      setTimeout(() => { setLoading(false); setStep(2); toast.success(t('common.verified_successfully')); }, 800);
+      try {
+        const fullPhone = `${countryCode.replace('+', '')}${phoneNumber}`;
+        const code = newOtp.join('');
+        const result = await verifyOtpMutation.mutateAsync({ phone: fullPhone, code });
+        if (result.success) {
+          setStep(2);
+          toast.success(t('common.verified_successfully'));
+        } else {
+          toast.error(result.error || 'رمز التحقق غير صحيح');
+          setOtp(['', '', '', '', '', '']);
+          otpRefs.current[0]?.focus();
+        }
+      } catch {
+        toast.error('فشل التحقق');
+      }
+      setLoading(false);
     }
-  }, [otp, language]);
+  }, [otp, countryCode, phoneNumber, verifyOtpMutation, t]);
 
   const handleOTPKeyDown = useCallback((index: number, e: React.KeyboardEvent) => {
     if (e.key === 'Backspace' && !otp[index] && index > 0) otpRefs.current[index - 1]?.focus();
   }, [otp]);
 
-  const handleCreateAccount = useCallback(() => {
+  const handleCreateAccount = useCallback(async () => {
     if (!fullName.trim() || !companyName.trim()) {
       toast.error(t('misc.please_complete_required_fields'));
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      login(`${countryCode}${phoneNumber}`, {
-        name: fullName, company: companyName,
-        activityType: activityType || 'technology', region: region || 'riyadh',
+    try {
+      const fullPhone = `${countryCode.replace('+', '')}${phoneNumber}`;
+      await registerMutation.mutateAsync({
+        phone: fullPhone,
+        fullName: fullName.trim(),
+        companyName: companyName.trim(),
+        activityType: activityType || 'technology',
+        region: region || 'riyadh',
       });
-      setLoading(false);
       toast.success(t('auth.account_created_welcome_to'));
-      navigate('/dashboard');
-    }, 1000);
-  }, [fullName, companyName, activityType, region, countryCode, phoneNumber, login, navigate, language]);
+      // Cookie is set by server — reload to pick it up
+      window.location.href = '/dashboard';
+    } catch {
+      toast.error('فشل إنشاء الحساب');
+    }
+    setLoading(false);
+  }, [fullName, companyName, activityType, region, countryCode, phoneNumber, registerMutation, t]);
 
   const activities = [
     { value: 'technology', label: t('technology') },
@@ -391,6 +428,15 @@ export default function Login() {
                   <p className="text-muted-foreground/80 text-center text-sm mb-2">{t('enterOTP')}</p>
                   <p className="text-[var(--gold-primary)] text-center text-sm font-mono mb-8" dir="ltr">{countryCode} {phoneNumber}</p>
 
+                  {/* Dev OTP hint — hidden when SMS is connected */}
+                  {devOtp && (
+                    <div className="rounded-xl p-3 text-center mb-4" style={{ background: 'rgba(212,168,67,0.08)', border: '1px solid rgba(212,168,67,0.2)' }}>
+                      <p className="text-xs text-muted-foreground">
+                        رمز التطوير: <span className="font-bold text-base text-foreground" dir="ltr">{devOtp}</span>
+                      </p>
+                    </div>
+                  )}
+
                   {/* OTP Inputs */}
                   <div className="flex justify-center gap-3 mb-6" dir="ltr">
                     {otp.map((digit, i) => (
@@ -420,7 +466,7 @@ export default function Login() {
                     )}
                   </div>
 
-                  <button onClick={() => { setStep(0); setOtp(['', '', '', '']); }}
+                  <button onClick={() => { setStep(0); setOtp(['', '', '', '', '', '']); }}
                     className="flex items-center gap-1.5 text-muted-foreground/60 hover:text-foreground/70 text-sm mx-auto transition-colors">
                     <BackArrow className="w-4 h-4" />{t('back')}
                   </button>

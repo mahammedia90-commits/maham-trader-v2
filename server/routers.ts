@@ -1,5 +1,6 @@
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { sdk } from "./_core/sdk";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
@@ -52,6 +53,66 @@ export const appRouter = router({
         });
         return { success: true };
       }),
+  }),
+
+  // Merchant OTP Login Flow
+  merchantAuth: router({
+    sendOtp: publicProcedure.input(z.object({
+      phone: z.string().min(9).max(15).regex(/^\+?[0-9]+$/, "Invalid phone format"),
+    })).mutation(async ({ input }) => {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      await db.createOtp(input.phone, code);
+      // Fallback: return code for testing until SMS is connected
+      // REMOVE this line when Msegat SMS is live:
+      return { success: true, fallbackCode: code };
+    }),
+
+    verifyOtp: publicProcedure.input(z.object({
+      phone: z.string().min(9).max(15),
+      code: z.string().length(6),
+    })).mutation(async ({ input }) => {
+      const valid = await db.verifyOtp(input.phone, input.code);
+      if (!valid) return { success: false, error: 'رمز التحقق غير صحيح أو منتهي الصلاحية' };
+      return { success: true };
+    }),
+
+    register: publicProcedure.input(z.object({
+      phone: z.string().min(9).max(15),
+      fullName: z.string().min(2).max(255),
+      companyName: z.string().max(255).optional(),
+      activityType: z.string().max(100).optional(),
+      region: z.string().max(100).optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const openId = `merchant_${input.phone}`;
+      await db.upsertUser({
+        openId,
+        name: input.fullName,
+        loginMethod: "otp",
+        lastSignedIn: new Date(),
+        role: "merchant" as any,
+        phone: input.phone,
+        company: input.companyName ?? null,
+        activityType: input.activityType ?? null,
+        region: input.region ?? null,
+      });
+      const token = await sdk.createSessionToken(openId, { name: input.fullName });
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      return { success: true };
+    }),
+
+    login: publicProcedure.input(z.object({
+      phone: z.string().min(9).max(15),
+    })).mutation(async ({ input, ctx }) => {
+      const openId = `merchant_${input.phone}`;
+      const user = await db.getUserByOpenId(openId);
+      if (!user) return { success: false, error: "User not found" };
+      await db.upsertUser({ openId, lastSignedIn: new Date() });
+      const token = await sdk.createSessionToken(openId, { name: user.name || input.phone });
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      return { success: true, user };
+    }),
   }),
 
   // Feature routers

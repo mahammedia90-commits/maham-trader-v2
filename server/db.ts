@@ -1,7 +1,7 @@
 import { eq, desc, and, sql, inArray, like, or, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
-  InsertUser, users,
+  InsertUser, users, otpCodes,
   venues, InsertVenue,
   events, InsertEvent,
   zones, InsertZone,
@@ -492,4 +492,30 @@ export async function validatePromoCode(code: string, eventId?: number) {
   if (promo.maxUses && promo.usedCount !== null && promo.usedCount >= promo.maxUses) return null;
   if (promo.eventId && eventId && promo.eventId !== eventId) return null;
   return promo;
+}
+
+// === OTP ===
+export async function createOtp(phone: string, code: string) {
+  const db = await getDb();
+  if (!db) return;
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+  await db.insert(otpCodes).values({ phone, code, expiresAt });
+}
+
+export async function verifyOtp(phone: string, code: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const now = new Date();
+  const result = await db.select().from(otpCodes)
+    .where(and(
+      eq(otpCodes.phone, phone),
+      eq(otpCodes.code, code),
+      eq(otpCodes.verified, 0),
+      gte(otpCodes.expiresAt, now)
+    ))
+    .orderBy(desc(otpCodes.createdAt))
+    .limit(1);
+  if (result.length === 0) return false;
+  await db.update(otpCodes).set({ verified: 1 }).where(eq(otpCodes.id, result[0].id));
+  return true;
 }
