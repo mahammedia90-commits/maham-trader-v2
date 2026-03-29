@@ -59,6 +59,10 @@ async function startServer() {
     serveStatic(app);
   }
 
+  // Global error handler — must be LAST middleware
+  const { globalErrorHandler } = await import("../lib/errorHandler");
+  app.use(globalErrorHandler);
+
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
 

@@ -1,15 +1,11 @@
-import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
 
 export const analyticsRouter = router({
-  // Get trader dashboard stats
-  stats: protectedProcedure.query(async ({ ctx }) => {
-    return db.getTraderStats(ctx.user.id);
-  }),
+  stats: protectedProcedure.query(({ ctx }) =>
+    db.getTraderStats(ctx.user.id)),
 
-  // Get trader profile completion
-  profileCompletion: protectedProcedure.query(async ({ ctx }) => {
+  profileCompletion: protectedProcedure.query(({ ctx }) => {
     const user = ctx.user;
     const fields = [
       { key: "name", filled: !!user.name },
@@ -21,9 +17,6 @@ export const analyticsRouter = router({
       { key: "kycStatus", filled: (user as any).kycStatus === "verified" },
     ];
     const filled = fields.filter(f => f.filled).length;
-    return {
-      percentage: Math.round((filled / fields.length) * 100),
-      fields,
-    };
+    return { percentage: Math.round((filled / fields.length) * 100), fields };
   }),
 });

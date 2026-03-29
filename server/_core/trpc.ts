@@ -2,9 +2,24 @@ import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
+import { AppError } from "../lib/errors";
+import { logger } from "../lib/logger";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
+  errorFormatter({ shape, error }) {
+    if (shape.data.httpStatus >= 500) {
+      logger.error(error.message, "tRPC", { path: shape.data.path }, error);
+    }
+    const cause = error.cause;
+    if (cause instanceof AppError) {
+      return { ...shape, data: { ...shape.data, appError: cause.toJSON().error } };
+    }
+    return {
+      ...shape,
+      data: { ...shape.data, stack: process.env.NODE_ENV === "production" ? undefined : shape.data.stack },
+    };
+  },
 });
 
 export const router = t.router;
