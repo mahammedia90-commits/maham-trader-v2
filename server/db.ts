@@ -498,20 +498,22 @@ export async function validatePromoCode(code: string, eventId?: number) {
 export async function createOtp(phone: string, code: string) {
   const db = await getDb();
   if (!db) return;
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-  await db.insert(otpCodes).values({ phone, code, expiresAt });
+  await db.insert(otpCodes).values({
+    phone,
+    code,
+    expiresAt: sql`DATE_ADD(NOW(), INTERVAL 5 MINUTE)`,
+  });
 }
 
 export async function verifyOtp(phone: string, code: string): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
-  const now = new Date();
   const result = await db.select().from(otpCodes)
     .where(and(
       eq(otpCodes.phone, phone),
       eq(otpCodes.code, code),
       eq(otpCodes.verified, 0),
-      gte(otpCodes.expiresAt, now)
+      gte(otpCodes.expiresAt, sql`NOW()`)
     ))
     .orderBy(desc(otpCodes.createdAt))
     .limit(1);

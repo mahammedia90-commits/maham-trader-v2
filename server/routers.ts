@@ -19,6 +19,9 @@ import { teamRouter } from "./routers/team";
 import { reviewsRouter } from "./routers/reviews";
 import { analyticsRouter } from "./routers/analytics";
 
+// Dev OTP store - bypasses DB timezone issues. REMOVE when Msegat SMS is live.
+const devOtpStore = new Map<string, string>();
+
 export const appRouter = router({
   system: systemRouter,
 
@@ -62,8 +65,9 @@ export const appRouter = router({
     })).mutation(async ({ input }) => {
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       await db.createOtp(input.phone, code);
-      // Fallback: return code for testing until SMS is connected
-      // REMOVE this line when Msegat SMS is live:
+      // Dev: store in memory for reliable verification
+      // REMOVE this block when Msegat SMS is live:
+      devOtpStore.set(input.phone, code);
       return { success: true, fallbackCode: code };
     }),
 
@@ -71,6 +75,12 @@ export const appRouter = router({
       phone: z.string().min(9).max(15),
       code: z.string().length(6),
     })).mutation(async ({ input }) => {
+      // Dev: check in-memory store first (bypasses DB timezone issues)
+      const devCode = devOtpStore.get(input.phone);
+      if (devCode && devCode === input.code) {
+        devOtpStore.delete(input.phone);
+        return { success: true };
+      }
       const valid = await db.verifyOtp(input.phone, input.code);
       if (!valid) return { success: false, error: 'رمز التحقق غير صحيح أو منتهي الصلاحية' };
       return { success: true };
