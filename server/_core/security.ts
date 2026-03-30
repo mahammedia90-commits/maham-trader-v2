@@ -9,12 +9,6 @@ const ALLOWED_ORIGINS = [
   /^http:\/\/127\.0\.0\.1(:\d+)?$/,
 ];
 
-function getClientIp(req: Request): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string") return forwarded.split(",")[0].trim();
-  return req.ip || req.socket.remoteAddress || "unknown";
-}
-
 export function registerSecurityMiddleware(app: Express): void {
   app.use(
     helmet({
@@ -57,7 +51,7 @@ export function registerSecurityMiddleware(app: Express): void {
       max: 200,
       standardHeaders: true,
       legacyHeaders: false,
-      keyGenerator: getClientIp,
+      validate: false,
       skip: (req) => req.path === "/api/health" || req.path === "/",
       message: { error: "Too many requests, please try again later" },
     })
@@ -70,7 +64,7 @@ export function registerSecurityMiddleware(app: Express): void {
       max: 10,
       standardHeaders: true,
       legacyHeaders: false,
-      keyGenerator: getClientIp,
+      validate: false,
       message: { error: "Too many auth attempts, please wait" },
     })
   );
